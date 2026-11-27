@@ -55,9 +55,9 @@ camera.lookAt(CAMERA_LOOK_AT.x, CAMERA_LOOK_AT.y, CAMERA_LOOK_AT.z);
 // ---- lights ----
 const hemi = new THREE.HemisphereLight(0xeef4ff, 0x6b7a5a, 0.9);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+const sun = setTimeOfDay.sun;
 scene.add(sun);
-setTimeOfDay(0, sun);
+setTimeOfDay(0);
 
 // ---- ground + grid ----
 const ground = new THREE.Mesh(
@@ -145,7 +145,7 @@ renderer.setAnimationLoop(() => {
     acc -= STEP;
   }
   const phase = (elapsed % DAY_LENGTH) / DAY_LENGTH;
-  setTimeOfDay(phase < 0.5 ? phase * 2 : 2 - phase * 2, sun);
+  setTimeOfDay(phase < 0.5 ? phase * 2 : 2 - phase * 2);
   renderer.render(scene, camera);
   frames++;
   ready = true;

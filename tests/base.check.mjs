@@ -117,12 +117,19 @@ async function colours(page, png) {
   const errors = [];
   const { context, page } = await open({ width: 844, height: 390 }, errors);
   await waitReady(page, 15000);
-  // Hide every overlay (HUD, help line) so only the canvas's own pixels are counted.
-  await page.addStyleTag({ content: "body > :not(canvas) { visibility: hidden !important; }" });
-  const canvas = page.locator("canvas");
-  const first = await canvas.screenshot({ path: `${OUT}/frame-1-load.png` });
+  // The canvas's own pixels, read from its drawing buffer right after a frame (no page overlay can get in).
+  const grab = async (file) => {
+    const url = await page.evaluate(() => new Promise((resolve) => {
+      // rAF callbacks run in order, so this one runs after the game drew this frame, before the buffer clears.
+      requestAnimationFrame(() => resolve(document.querySelector("canvas").toDataURL("image/png")));
+    }));
+    const png = Buffer.from(url.split(",")[1], "base64");
+    await writeFile(file, png);
+    return png;
+  };
+  const first = await grab(`${OUT}/frame-1-load.png`);
   await page.waitForTimeout(2000);
-  const second = await canvas.screenshot({ path: `${OUT}/frame-2-after-2s.png` });
+  const second = await grab(`${OUT}/frame-2-after-2s.png`);
   const same = Buffer.compare(first, second) === 0;
   const c1 = await colours(page, first);
   const c2 = await colours(page, second);
@@ -144,20 +151,17 @@ async function colours(page, png) {
   });
   const TAP = { x: 844 * 0.7, y: 390 * 0.65 };
   await page.mouse.click(TAP.x, TAP.y);
-  await page.waitForTimeout(100);
-  const appTarget = await page.evaluate(() => window.__game.target);
-  // The expected ground point, worked out here (not read from the app): a ray from the fixed camera
+  // The expected ground point comes from the tap coordinate sent, never from the app: a ray from the fixed camera
   // (position from __game, looking at the origin, 40 degree vertical fov) through the tapped pixel, hit on y = 0.
   const cam = await page.evaluate(() => window.__game.camera);
   const tgt = groundPoint(cam, TAP.x / 844 * 2 - 1, -(TAP.y / 390) * 2 + 1, 844 / 390, 40);
   await page.waitForTimeout(3000);
   const end = await page.evaluate(() => ({ p: window.__game.player, f: window.__game.frames, ys: window.__ys }));
-  if (!appTarget) record(4, "tap to move", false, "tap set no ground target (window.__game.target is null)");
-  else {
+  {
     const d = Math.hypot(end.p.x - tgt.x, end.p.z - tgt.z);
     const moved = Math.hypot(tgt.x, tgt.z) > 1; // the tap point is away from the start (0,0)
     record(4, "tap to move", d <= 0.5 && moved && end.f > f0,
-      `tap at (${tgt.x.toFixed(2)}, ${tgt.z.toFixed(2)}), player at (${end.p.x.toFixed(2)}, ${end.p.z.toFixed(2)}), off by ${d.toFixed(3)}; frames ${f0} -> ${end.f}`);
+      `tap pixel (${TAP.x}, ${TAP.y}) = ground (${tgt.x.toFixed(2)}, ${tgt.z.toFixed(2)}), player at (${end.p.x.toFixed(2)}, ${end.p.z.toFixed(2)}), off by ${d.toFixed(3)}; frames ${f0} -> ${end.f}`);
   }
   const worst = end.ys.reduce((m, y) => Math.max(m, Math.abs(y)), 0);
   record(6, "on the ground", end.ys.length > 10 && worst <= 0.05, `${end.ys.length} frames sampled, largest |y| ${worst.toFixed(4)}`);
