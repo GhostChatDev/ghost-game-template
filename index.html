@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Ghost Game Template</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="hud" aria-live="polite">Score: 0</div>
+  <p id="help">Ghost Game Template. Tap or click the ground and the box walks there.</p>
+  <div id="nogl" hidden>This game needs WebGL2. Try a recent Safari, Chrome or Firefox.</div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
