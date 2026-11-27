@@ -158,15 +158,23 @@ async function colours(page, png) {
   const errors = [];
   const { context, page } = await open({ width: 844, height: 390 }, errors);
   await waitReady(page, 15000);
+  // Load: a probe written to storage must come back as the state after a reload.
+  const probe = JSON.stringify({ probe: 7 });
+  await page.evaluate((p) => localStorage.setItem("ghost-game-save-v1", p), probe);
+  await page.reload({ waitUntil: "load" });
+  await waitReady(page, 15000);
+  const loaded = await page.evaluate(() => JSON.stringify(window.__game.state));
+  // Save: storage cleared, save() must write the state back out, and a reload must return it identical.
   const before = await page.evaluate(() => {
+    localStorage.removeItem("ghost-game-save-v1");
     const ok = typeof window.__game.save === "function" && window.__game.save();
     return { ok, state: JSON.stringify(window.__game.state), stored: localStorage.getItem("ghost-game-save-v1") };
   });
   await page.reload({ waitUntil: "load" });
   await waitReady(page, 15000);
   const after = await page.evaluate(() => JSON.stringify(window.__game.state));
-  const ok = before.ok === true && before.stored !== null && before.stored === before.state && after === before.state;
-  record(7, "save and reload", ok, `saved ${before.stored}, state after reload ${after}`);
+  const ok = loaded === probe && before.ok === true && before.stored === before.state && after === before.state;
+  record(7, "save and reload", ok, `probe ${probe} loaded as ${loaded}; saved ${before.stored}, state after reload ${after}`);
   await context.close();
 }
 
