@@ -1,7 +1,7 @@
 name: Ghost Pages
 on:
   push:
-    branches: ["ghost-code/**"]
+    branches: ["main", "ghost-code/**"]
   workflow_dispatch:
 permissions:
   contents: write
@@ -33,6 +33,7 @@ jobs:
           # Never published: the git folder, secrets, packages, workflows.
           rm -rf /tmp/site/.git /tmp/site/.github /tmp/site/node_modules /tmp/site/.env*
           touch /tmp/site/.nojekyll
+          echo "${GITHUB_SHA}" > /tmp/site/version.txt
       - name: Publish to the ghost-pages branch
         run: |
           cd /tmp/site
@@ -42,3 +43,17 @@ jobs:
           git add -A
           git commit -qm "Publish ${GITHUB_SHA::7}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ghost-pages
+      # Proof the push really deployed: the live site must serve this commit's version.txt.
+      # Fails (instead of passing on a stale or 404 site) when Pages didn't rebuild.
+      - name: Confirm the live site serves this commit
+        run: |
+          OWNER="${GITHUB_REPOSITORY%%/*}"; NAME="${GITHUB_REPOSITORY#*/}"
+          URL="https://${OWNER,,}.github.io/${NAME}/version.txt"
+          for i in $(seq 1 40); do
+            GOT=""
+            if curl -fsSL -H "Cache-Control: no-cache" -o /tmp/version.txt "$URL?n=$i"; then GOT=$(tr -d '[:space:]' < /tmp/version.txt); fi
+            if [ "$GOT" = "$GITHUB_SHA" ]; then echo "Live at $URL: $GOT"; exit 0; fi
+            echo "Waiting for Pages ($i/40): got '${GOT:-nothing}'"; sleep 15
+          done
+          echo "::error::The live site at $URL doesn't serve ${GITHUB_SHA} after 10 minutes. Switch on Settings → Pages → Deploy from a branch → ghost-pages / (root)."
+          exit 1
