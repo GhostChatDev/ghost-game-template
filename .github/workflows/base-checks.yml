@@ -32,6 +32,8 @@ jobs:
           key: base-browser-${{ runner.os }}-playwright-1.58.2
       - name: Run the 7 base checks
         run: node tests/base.check.mjs
+      - name: Break tests (checks 2 and 7 must go red when broken)
+        run: node tests/break.check.mjs
       - name: Keep the frame-check screenshots
         if: always()
         uses: actions/upload-artifact@v4
