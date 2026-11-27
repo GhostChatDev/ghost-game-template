@@ -1,0 +1,44 @@
+name: Ghost Pages
+on:
+  push:
+    branches: ["ghost-code/**"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: ghost-pages
+  cancel-in-progress: true
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the site
+        run: |
+          OUT=.
+          if [ -f package.json ]; then
+            if [ -f package-lock.json ]; then npm ci; else npm install; fi
+            REPO_NAME="${GITHUB_REPOSITORY#*/}"
+            # Pages serves the site under /<repository>/: a Vite app is built for that address.
+            if npm ls vite >/dev/null 2>&1; then npx vite build --base="/$REPO_NAME/"
+            elif npm run | grep -qE "^  build$"; then npm run build; fi
+            for d in dist build out docs; do if [ -f "$d/index.html" ]; then OUT="$d"; break; fi; done
+          fi
+          if [ ! -f "$OUT/index.html" ]; then echo "::error::No index.html to publish: a site needs one (or a build that makes one)."; exit 1; fi
+          mkdir -p /tmp/site && cp -r "$OUT"/. /tmp/site/
+          # Never published: the git folder, secrets, packages, workflows.
+          rm -rf /tmp/site/.git /tmp/site/.github /tmp/site/node_modules /tmp/site/.env*
+          touch /tmp/site/.nojekyll
+      - name: Publish to the ghost-pages branch
+        run: |
+          cd /tmp/site
+          git init -q -b ghost-pages
+          git config user.name "Ghost Code"
+          git config user.email "ghost-code@users.noreply.github.com"
+          git add -A
+          git commit -qm "Publish ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ghost-pages
