@@ -14,7 +14,7 @@
 - index.html: import map (three pinned), HUD, help line, no-WebGL message, loads src/main.js
 - style.css: full-viewport canvas, HUD and help line
 - src/main.js: renderer, fixed camera, lights, ground and grid, player box, tap-to-move, fixed step, save/load, window.__game
-- src/daylight.js: setTimeOfDay(t[, sun]) returns sun colour/intensity/position, morning white to hard orange
+- src/daylight.js: setTimeOfDay(t) sets the one sun (setTimeOfDay.sun) colour/intensity/position, morning white to hard orange
 - tests/base.check.mjs: the 7 browser checks (Playwright), screenshots in test-results/
 - .github/workflows/base-checks.yml: runs the 7 checks on every push
 - PRODUCT.template.md, DESIGN.template.md: stubs a new game fills in first
