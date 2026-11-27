@@ -33,6 +33,24 @@ const record = (n, name, ok, detail) => {
 
 const browser = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
 
+// Ray from a camera looking at the origin through NDC (nx, ny), intersected with the ground plane y = 0.
+function groundPoint(cam, nx, ny, aspect, fovDeg) {
+  const len = Math.hypot(cam.x, cam.y, cam.z);
+  const f = { x: -cam.x / len, y: -cam.y / len, z: -cam.z / len };
+  let r = { x: -f.z, y: 0, z: f.x }; // right = forward x world-up (0,1,0)
+  const rl = Math.hypot(r.x, r.z);
+  r = { x: r.x / rl, y: 0, z: r.z / rl };
+  const u = { x: r.y * f.z - r.z * f.y, y: r.z * f.x - r.x * f.z, z: r.x * f.y - r.y * f.x };
+  const h = Math.tan((fovDeg * Math.PI) / 360);
+  const d = {
+    x: f.x + r.x * nx * h * aspect + u.x * ny * h,
+    y: f.y + r.y * nx * h * aspect + u.y * ny * h,
+    z: f.z + r.z * nx * h * aspect + u.z * ny * h,
+  };
+  const s = -cam.y / d.y;
+  return { x: cam.x + d.x * s, z: cam.z + d.z * s };
+}
+
 async function open(viewport, errors) {
   const context = await browser.newContext({ viewport, hasTouch: true });
   const page = await context.newPage();
@@ -99,6 +117,8 @@ async function colours(page, png) {
   const errors = [];
   const { context, page } = await open({ width: 844, height: 390 }, errors);
   await waitReady(page, 15000);
+  // Hide every overlay (HUD, help line) so only the canvas's own pixels are counted.
+  await page.addStyleTag({ content: "body > :not(canvas) { visibility: hidden !important; }" });
   const canvas = page.locator("canvas");
   const first = await canvas.screenshot({ path: `${OUT}/frame-1-load.png` });
   await page.waitForTimeout(2000);
@@ -122,12 +142,17 @@ async function colours(page, png) {
     const tick = () => { window.__ys.push(window.__game.player.y); requestAnimationFrame(tick); };
     requestAnimationFrame(tick);
   });
-  await page.mouse.click(844 * 0.7, 390 * 0.65);
+  const TAP = { x: 844 * 0.7, y: 390 * 0.65 };
+  await page.mouse.click(TAP.x, TAP.y);
   await page.waitForTimeout(100);
-  const tgt = await page.evaluate(() => window.__game.target);
+  const appTarget = await page.evaluate(() => window.__game.target);
+  // The expected ground point, worked out here (not read from the app): a ray from the fixed camera
+  // (position from __game, looking at the origin, 40 degree vertical fov) through the tapped pixel, hit on y = 0.
+  const cam = await page.evaluate(() => window.__game.camera);
+  const tgt = groundPoint(cam, TAP.x / 844 * 2 - 1, -(TAP.y / 390) * 2 + 1, 844 / 390, 40);
   await page.waitForTimeout(3000);
   const end = await page.evaluate(() => ({ p: window.__game.player, f: window.__game.frames, ys: window.__ys }));
-  if (!tgt) record(4, "tap to move", false, "tap set no ground target (window.__game.target is null)");
+  if (!appTarget) record(4, "tap to move", false, "tap set no ground target (window.__game.target is null)");
   else {
     const d = Math.hypot(end.p.x - tgt.x, end.p.z - tgt.z);
     const moved = Math.hypot(tgt.x, tgt.z) > 1; // the tap point is away from the start (0,0)
