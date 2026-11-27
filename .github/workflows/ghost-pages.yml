@@ -1,0 +1,59 @@
+name: Ghost Pages
+on:
+  push:
+    branches: ["main", "ghost-code/**"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: ghost-pages
+  cancel-in-progress: true
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the site
+        run: |
+          OUT=.
+          if [ -f package.json ]; then
+            if [ -f package-lock.json ]; then npm ci; else npm install; fi
+            REPO_NAME="${GITHUB_REPOSITORY#*/}"
+            # Pages serves the site under /<repository>/: a Vite app is built for that address.
+            if npm ls vite >/dev/null 2>&1; then npx vite build --base="/$REPO_NAME/"
+            elif npm run | grep -qE "^  build$"; then npm run build; fi
+            for d in dist build out docs; do if [ -f "$d/index.html" ]; then OUT="$d"; break; fi; done
+          fi
+          if [ ! -f "$OUT/index.html" ]; then echo "::error::No index.html to publish: a site needs one (or a build that makes one)."; exit 1; fi
+          mkdir -p /tmp/site && cp -r "$OUT"/. /tmp/site/
+          # Never published: the git folder, secrets, packages, workflows.
+          rm -rf /tmp/site/.git /tmp/site/.github /tmp/site/node_modules /tmp/site/.env*
+          touch /tmp/site/.nojekyll
+          echo "${GITHUB_SHA}" > /tmp/site/version.txt
+      - name: Publish to the ghost-pages branch
+        run: |
+          cd /tmp/site
+          git init -q -b ghost-pages
+          git config user.name "Ghost Code"
+          git config user.email "ghost-code@users.noreply.github.com"
+          git add -A
+          git commit -qm "Publish ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ghost-pages
+      # Proof the push really deployed: the live site must serve this commit's version.txt.
+      # Fails (instead of passing on a stale or 404 site) when Pages didn't rebuild.
+      - name: Confirm the live site serves this commit
+        run: |
+          OWNER="${GITHUB_REPOSITORY%%/*}"; NAME="${GITHUB_REPOSITORY#*/}"
+          URL="https://${OWNER,,}.github.io/${NAME}/version.txt"
+          for i in $(seq 1 40); do
+            GOT=""
+            if curl -fsSL -H "Cache-Control: no-cache" -o /tmp/version.txt "$URL?n=$i"; then GOT=$(tr -d '[:space:]' < /tmp/version.txt); fi
+            if [ "$GOT" = "$GITHUB_SHA" ]; then echo "Live at $URL: $GOT"; exit 0; fi
+            echo "Waiting for Pages ($i/40): got '${GOT:-nothing}'"; sleep 15
+          done
+          echo "::error::The live site at $URL doesn't serve ${GITHUB_SHA} after 10 minutes. Switch on Settings → Pages → Deploy from a branch → ghost-pages / (root)."
+          exit 1
